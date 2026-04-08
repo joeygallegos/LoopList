@@ -6,7 +6,7 @@ import os
 import random
 import string
 import threading
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from flask import Flask, request, render_template_string, session
 from flask_socketio import SocketIO, emit
@@ -17,6 +17,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 CONFIG_PATH = "config.json"
 STATE_PATH = "state.json"
+DEFAULT_LIST_NAME = "Default"
 
 _file_lock = threading.Lock()
 
@@ -42,6 +43,54 @@ def save_json(path: str, data: Any) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
+def normalize_sections(raw_sections: Any) -> Dict[str, List[str]]:
+    if not isinstance(raw_sections, dict):
+        return {}
+
+    sections: Dict[str, List[str]] = {}
+    for section_name, raw_items in raw_sections.items():
+        if not isinstance(raw_items, list):
+            continue
+        sections[str(section_name)] = [str(item) for item in raw_items]
+    return sections
+
+
+def normalize_config(raw_config: Any) -> Tuple[Dict[str, Dict[str, List[str]]], str]:
+    lists: Dict[str, Dict[str, List[str]]] = {}
+    default_list = DEFAULT_LIST_NAME
+
+    if isinstance(raw_config, dict) and isinstance(raw_config.get("lists"), dict):
+        for list_name, raw_sections in raw_config["lists"].items():
+            if isinstance(raw_sections, dict):
+                lists[str(list_name)] = normalize_sections(raw_sections)
+        requested_default = raw_config.get("default_list")
+        if isinstance(requested_default, str) and requested_default.strip():
+            default_list = requested_default.strip()
+    else:
+        sections = normalize_sections(raw_config)
+        lists[DEFAULT_LIST_NAME] = sections
+
+    if not lists:
+        lists[DEFAULT_LIST_NAME] = {}
+
+    if default_list not in lists:
+        default_list = next(iter(lists))
+
+    return lists, default_list
+
+
+def build_config_document(
+    lists_config: Dict[str, Dict[str, List[str]]],
+    default_list: str,
+) -> Dict[str, Any]:
+    if default_list not in lists_config:
+        default_list = next(iter(lists_config), DEFAULT_LIST_NAME)
+    return {
+        "default_list": default_list,
+        "lists": lists_config,
+    }
+
+
 def sync_state_with_config(
     config: Dict[str, List[str]],
     state: Dict[str, List[bool]],
@@ -61,20 +110,70 @@ def sync_state_with_config(
     return new_state
 
 
+def normalize_state(
+    raw_state: Any,
+    lists_config: Dict[str, Dict[str, List[str]]],
+    default_list: str,
+) -> Dict[str, Dict[str, List[bool]]]:
+    state_by_list: Dict[str, Dict[str, List[bool]]] = {}
+
+    if isinstance(raw_state, dict) and any(isinstance(value, dict) for value in raw_state.values()):
+        for list_name, raw_sections in raw_state.items():
+            if isinstance(raw_sections, dict):
+                state_by_list[str(list_name)] = {
+                    str(section_name): [bool(value) for value in values]
+                    for section_name, values in raw_sections.items()
+                    if isinstance(values, list)
+                }
+    elif isinstance(raw_state, dict):
+        state_by_list[default_list] = {
+            str(section_name): [bool(value) for value in values]
+            for section_name, values in raw_state.items()
+            if isinstance(values, list)
+        }
+
+    normalized_state: Dict[str, Dict[str, List[bool]]] = {}
+    for list_name, sections in lists_config.items():
+        normalized_state[list_name] = sync_state_with_config(
+            sections,
+            state_by_list.get(list_name, {}),
+        )
+
+    return normalized_state
+
+
+def load_normalized_data() -> Tuple[
+    Dict[str, Dict[str, List[str]]],
+    Dict[str, Dict[str, List[bool]]],
+    str,
+    Dict[str, Any],
+    Any,
+    Any,
+]:
+    raw_config = load_json(CONFIG_PATH)
+    lists_config, default_list = normalize_config(raw_config)
+    config_doc = build_config_document(lists_config, default_list)
+
+    raw_state = load_json_or_default(STATE_PATH, {})
+    state_doc = normalize_state(raw_state, lists_config, default_list)
+
+    return lists_config, state_doc, default_list, config_doc, raw_config, raw_state
+
+
 def ensure_state() -> None:
     with _file_lock:
-        config: Dict[str, List[str]] = load_json(CONFIG_PATH)
-        state: Dict[str, List[bool]] = load_json_or_default(STATE_PATH, {})
-        new_state = sync_state_with_config(config, state)
-        if new_state != state:
-            save_json(STATE_PATH, new_state)
+        _, state_doc, _, config_doc, raw_config, raw_state = load_normalized_data()
+        if config_doc != raw_config:
+            save_json(CONFIG_PATH, config_doc)
+        if state_doc != raw_state:
+            save_json(STATE_PATH, state_doc)
 
 
 @app.route("/")
 def index():
     ensure_state()
-    config = load_json(CONFIG_PATH)
-    state = load_json(STATE_PATH)
+    with _file_lock:
+        lists_config, state, default_list, _, _, _ = load_normalized_data()
     session["reset_code"] = generate_code()
 
     html = """
@@ -118,20 +217,34 @@ def index():
                 🧽 ScrubSquad
             </h1>
 
-            <div class="flex justify-end gap-2 mb-4">
-                <button
-                    class="bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded"
-                    @click="openAddModal()"
-                >
-                    + Add Item
-                </button>
+            <div class="flex flex-col gap-3 mb-4 md:flex-row md:items-end md:justify-between">
+                <div class="w-full md:max-w-sm">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Configured List</label>
+                    <select
+                        class="border p-2 rounded w-full bg-white"
+                        x-model="selectedList"
+                    >
+                        <template x-for="listName in listNames" :key="listName">
+                            <option :value="listName" x-text="listName"></option>
+                        </template>
+                    </select>
+                </div>
 
-                <button
-                    class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded"
-                    @click="showResetModal = true"
-                >
-                    Reset Options
-                </button>
+                <div class="flex justify-end gap-2">
+                    <button
+                        class="bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded"
+                        @click="openAddModal()"
+                    >
+                        + Add Item
+                    </button>
+
+                    <button
+                        class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded"
+                        @click="showResetModal = true"
+                    >
+                        Reset List
+                    </button>
+                </div>
             </div>
 
             <div class="mb-6">
@@ -201,11 +314,13 @@ def index():
                 x-transition
             >
                 <div class="bg-white rounded shadow p-6 w-80">
-                    <h2 class="text-xl font-bold mb-4">Reset All Items</h2>
+                    <h2 class="text-xl font-bold mb-4">Reset This List</h2>
 
                     <p class="text-sm mb-2 text-gray-600">
-                        Enter the reset code to clear all progress:
+                        Enter the reset code to clear progress for the selected list:
                     </p>
+
+                    <p class="text-sm font-medium mb-3 text-gray-800" x-text="selectedList"></p>
 
                     <p class="font-mono text-lg mb-3 text-blue-700">
                         <strong>{{ reset_code }}</strong>
@@ -221,7 +336,7 @@ def index():
                             class="bg-red-600 text-white px-4 py-2 rounded"
                             @click="attemptReset()"
                         >
-                            Reset All
+                            Reset List
                         </button>
 
                         <button
@@ -258,6 +373,13 @@ def index():
                     </template>
                 </div>
             </template>
+
+            <div
+                class="bg-white rounded shadow p-6 text-center text-gray-500"
+                x-show="!Object.keys(groups).length"
+            >
+                This list has no sections configured.
+            </div>
         </div>
 
         <script>
@@ -265,8 +387,9 @@ def index():
                 const socket = io();
 
                 return {
-                    groups: {{ config|tojson }},
-                    state: {{ state|tojson }},
+                    lists: {{ lists_config|tojson }},
+                    stateByList: {{ state|tojson }},
+                    selectedList: {{ default_list|tojson }},
 
                     resetCode: "",
                     showResetModal: false,
@@ -276,11 +399,24 @@ def index():
                     addText: "",
                     addError: "",
 
+                    get listNames() {
+                        return Object.keys(this.lists || {});
+                    },
+
+                    get groups() {
+                        return this.lists[this.selectedList] || {};
+                    },
+
+                    get state() {
+                        return this.stateByList[this.selectedList] || {};
+                    },
+
                     get percentComplete() {
                         let total=0, done=0;
-                        for(const g in this.state){
-                            total += this.state[g].length;
-                            done += this.state[g].filter(Boolean).length;
+                        for(const g in this.groups){
+                            const values = this.state[g] || [];
+                            total += values.length;
+                            done += values.filter(Boolean).length;
                         }
                         return total===0?0:Math.round((done/total)*100);
                     },
@@ -315,21 +451,27 @@ def index():
                             return;
                         }
 
-                        socket.emit("add_item", { group, text });
+                        socket.emit("add_item", { list_name: this.selectedList, group, text });
                     },
 
                     toggleItem(group, idx) {
-                        socket.emit("toggle_item", {group, index: idx});
+                        socket.emit("toggle_item", {list_name: this.selectedList, group, index: idx});
                     },
 
                     attemptReset() {
-                        socket.emit("reset_all", {code: this.resetCode});
+                        socket.emit("reset_all", {code: this.resetCode, list_name: this.selectedList});
                     },
 
                     init() {
-                        socket.on("state_update", data => { this.state = data; });
+                        if (!this.listNames.includes(this.selectedList)) {
+                            this.selectedList = this.listNames.length ? this.listNames[0] : "";
+                        }
+
+                        socket.on("state_update", data => { this.stateByList = data; });
                         socket.on("config_update", data => {
-                            this.groups = data;
+                            this.lists = data.lists || {};
+                            const fallback = data.default_list || this.listNames[0] || "";
+                            if (!this.listNames.includes(this.selectedList)) this.selectedList = fallback;
                             const keys = Object.keys(this.groups || {});
                             if (!keys.includes(this.addGroup)) this.addGroup = keys.length ? keys[0] : "";
                         });
@@ -352,8 +494,9 @@ def index():
     """
     return render_template_string(
         html,
-        config=config,
+        lists_config=lists_config,
         state=state,
+        default_list=default_list,
         reset_code=session["reset_code"],
     )
 
@@ -363,18 +506,19 @@ def index():
 # -----------------------------
 @socketio.on("toggle_item")
 def socket_toggle(data):
+    list_name = (data.get("list_name") or "").strip()
     group = data["group"]
     idx = int(data["index"])
 
     with _file_lock:
-        config = load_json(CONFIG_PATH)
-        state = load_json_or_default(STATE_PATH, {})
-        state = sync_state_with_config(config, state)
+        lists_config, state, default_list, _, _, _ = load_normalized_data()
+        if list_name not in lists_config:
+            list_name = default_list
 
-        if group not in state or idx < 0 or idx >= len(state[group]):
+        if group not in state.get(list_name, {}) or idx < 0 or idx >= len(state[list_name][group]):
             return
 
-        state[group][idx] = not state[group][idx]
+        state[list_name][group][idx] = not state[list_name][group][idx]
         save_json(STATE_PATH, state)
 
     emit("state_update", state, broadcast=True)
@@ -384,24 +528,35 @@ def socket_toggle(data):
 def socket_reset(payload):
     submitted = (payload.get("code") or "").strip()
     expected = (session.get("reset_code") or "").strip()
+    list_name = (payload.get("list_name") or "").strip()
 
     if submitted != expected:
         emit("reset_failed", {}, to=request.sid)
         return
 
     with _file_lock:
-        config = load_json(CONFIG_PATH)
-        new_state = {g: [False] * len(items) for g, items in config.items()}
-        save_json(STATE_PATH, new_state)
+        lists_config, state, default_list, _, _, _ = load_normalized_data()
+        if list_name not in lists_config:
+            list_name = default_list
 
-    emit("state_update", new_state, broadcast=True)
+        state[list_name] = {
+            group_name: [False] * len(items)
+            for group_name, items in lists_config[list_name].items()
+        }
+        save_json(STATE_PATH, state)
+
+    emit("state_update", state, broadcast=True)
 
 
 @socketio.on("add_item")
 def socket_add_item(payload):
+    list_name = (payload.get("list_name") or "").strip()
     group = (payload.get("group") or "").strip()
     text = (payload.get("text") or "").strip()
 
+    if not list_name:
+        emit("add_failed", {"error": "Missing list."}, to=request.sid)
+        return
     if not group:
         emit("add_failed", {"error": "Missing group."}, to=request.sid)
         return
@@ -413,20 +568,24 @@ def socket_add_item(payload):
         return
 
     with _file_lock:
-        config: Dict[str, List[str]] = load_json(CONFIG_PATH)
-        if group not in config:
-            emit("add_failed", {"error": f'Group "{group}" does not exist.'}, to=request.sid)
+        lists_config, state, default_list, _, _, _ = load_normalized_data()
+        if list_name not in lists_config:
+            emit("add_failed", {"error": f'List "{list_name}" does not exist.'}, to=request.sid)
             return
 
-        config[group].append(text)
-        save_json(CONFIG_PATH, config)
+        if group not in lists_config[list_name]:
+            emit("add_failed", {"error": f'Section "{group}" does not exist.'}, to=request.sid)
+            return
 
-        state: Dict[str, List[bool]] = load_json_or_default(STATE_PATH, {})
-        state = sync_state_with_config(config, state)  # includes the new item
+        lists_config[list_name][group].append(text)
+        config_doc = build_config_document(lists_config, default_list)
+        save_json(CONFIG_PATH, config_doc)
+
+        state = normalize_state(state, lists_config, default_list)
         save_json(STATE_PATH, state)
 
     emit("add_ok", {}, to=request.sid)
-    emit("config_update", config, broadcast=True)
+    emit("config_update", config_doc, broadcast=True)
     emit("state_update", state, broadcast=True)
 
 

@@ -288,6 +288,13 @@
                             + Add Item
                         </button>
 
+                        <a
+                            class="action-button inline-flex items-center justify-center rounded-2xl bg-white/90 px-5 py-3 text-sm font-semibold text-[#16203a] shadow-sm ring-1 ring-[#635bff]/12"
+                            href="/add"
+                        >
+                            Add Items
+                        </a>
+
                         <button
                             class="action-button rounded-2xl bg-white/90 px-5 py-3 text-sm font-semibold text-[#16203a] shadow-sm ring-1 ring-[#635bff]/12"
                             @click="showResetModal = true"
@@ -668,6 +675,11 @@
                     });
 
                     socket.on("reset_failed", () => { alert("Invalid reset code."); });
+
+                    socket.on("reset_ok", () => {
+                        this.showResetModal = false;
+                        this.resetCode = "";
+                    });
 
                     socket.on("add_failed", payload => {
                         this.addError = (payload && payload.error) ? payload.error : "Failed to add item.";

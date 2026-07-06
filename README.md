@@ -37,7 +37,7 @@ Start the app with:
 python app.py
 ```
 
-Then open `http://localhost:4813`.
+Then open `http://localhost:4813`. Use `http://localhost:4813/add` to add items from a dedicated page.
 
 ## Configuration
 
@@ -78,3 +78,35 @@ GET /api/lists
 ```
 
 The response includes `schema_version`, `default_list`, and `lists`. Each list contains sections, and each section contains items with `index`, `text`, and `status` (`pending`, `done`, or `skipped`).
+
+Add one item to a section by naming the section in the JSON body:
+
+```http
+POST /api/lists/House%20Cleaning/items
+Content-Type: application/json
+```
+
+```json
+{
+  "section": "List A - Kitchen",
+  "text": "Clean under sink"
+}
+```
+
+Add one or more items to a section named in the URL:
+
+```http
+POST /api/lists/House%20Cleaning/sections/List%20A%20-%20Kitchen/items
+Content-Type: application/json
+```
+
+```json
+{
+  "items": [
+    "Clean under sink",
+    "Polish faucet"
+  ]
+}
+```
+
+Set `"create_section": true` to create a missing section while adding items. Both POST endpoints return the full list JSON using the same schema as `GET /api/lists`.

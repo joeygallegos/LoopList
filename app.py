@@ -23,6 +23,7 @@ STATUS_PENDING = "pending"
 STATUS_DONE = "done"
 STATUS_SKIPPED = "skipped"
 VALID_STATUSES = {STATUS_PENDING, STATUS_DONE, STATUS_SKIPPED}
+MAX_ITEM_TEXT_LENGTH = 120
 
 _file_lock = threading.Lock()
 
@@ -244,8 +245,78 @@ def index():
         state=state,
         reset_code=session["reset_code"],
     )
+@app.route("/add")
+def add_page():
+    with _file_lock:
+        _, _, _, config_doc, _, _ = load_normalized_data()
+    return render_template("add.html", config_doc=config_doc)
 
 
+
+
+
+
+def api_error(message: str, status_code: int):
+    return jsonify({"error": message}), status_code
+
+
+def parse_items_payload(payload: Any) -> Tuple[List[str], str | None]:
+    if not isinstance(payload, dict):
+        return [], "Expected a JSON object."
+
+    if "items" in payload:
+        raw_items = payload.get("items")
+        if not isinstance(raw_items, list):
+            return [], "items must be an array of strings."
+    elif "text" in payload:
+        raw_items = [payload.get("text")]
+    else:
+        return [], "Provide text or items."
+
+    items: List[str] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, str):
+            return [], "Each item must be a string."
+        item = raw_item.strip()
+        if not item:
+            return [], "Item cannot be empty."
+        if len(item) > MAX_ITEM_TEXT_LENGTH:
+            return [], f"Keep items under {MAX_ITEM_TEXT_LENGTH} characters."
+        items.append(item)
+
+    return items, None
+
+
+def add_items_to_section(
+    list_name: str,
+    section_name: str,
+    item_texts: List[str],
+    create_section: bool = False,
+) -> Tuple[Dict[str, Any], Dict[str, Dict[str, List[str]]], str | None]:
+    if not list_name:
+        return {}, {}, "Missing list."
+    if not section_name:
+        return {}, {}, "Missing section."
+    if not item_texts:
+        return {}, {}, "Provide at least one item."
+
+    lists_config, state, default_list, _, _, _ = load_normalized_data()
+    if list_name not in lists_config:
+        return {}, {}, f'List "{list_name}" does not exist.'
+
+    if section_name not in lists_config[list_name]:
+        if not create_section:
+            return {}, {}, f'Section "{section_name}" does not exist.'
+        lists_config[list_name][section_name] = []
+
+    lists_config[list_name][section_name].extend(item_texts)
+    config_doc = build_config_document(lists_config, default_list)
+    save_json(CONFIG_PATH, config_doc)
+
+    state = normalize_state(state, lists_config, default_list)
+    save_json(STATE_PATH, build_state_document(state))
+
+    return config_doc, state, None
 
 @app.route("/api/lists", methods=["GET"])
 def api_lists():
@@ -253,6 +324,61 @@ def api_lists():
         lists_config, state, default_list, _, _, _ = load_normalized_data()
         payload = build_lists_api_payload(lists_config, state, default_list)
     return jsonify(payload)
+
+
+@app.route("/api/lists/<list_name>/items", methods=["POST"])
+def api_add_items_to_list(list_name):
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return api_error("Expected a JSON object.", 400)
+
+    section_name = str(payload.get("section") or payload.get("section_name") or "").strip()
+    item_texts, error = parse_items_payload(payload)
+    if error:
+        return api_error(error, 400)
+
+    with _file_lock:
+        config_doc, state, error = add_items_to_section(
+            list_name.strip(),
+            section_name,
+            item_texts,
+            create_section=bool(payload.get("create_section")),
+        )
+
+    if error:
+        status_code = 404 if "does not exist" in error else 400
+        return api_error(error, status_code)
+
+    socketio.emit("config_update", config_doc)
+    socketio.emit("state_update", state)
+    return jsonify(build_lists_api_payload(config_doc["lists"], state, config_doc["default_list"])), 201
+
+
+@app.route("/api/lists/<list_name>/sections/<section_name>/items", methods=["POST"])
+def api_add_items_to_section(list_name, section_name):
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return api_error("Expected a JSON object.", 400)
+
+    item_texts, error = parse_items_payload(payload)
+    if error:
+        return api_error(error, 400)
+
+    with _file_lock:
+        config_doc, state, error = add_items_to_section(
+            list_name.strip(),
+            section_name.strip(),
+            item_texts,
+            create_section=bool(payload.get("create_section")),
+        )
+
+    if error:
+        status_code = 404 if "does not exist" in error else 400
+        return api_error(error, status_code)
+
+    socketio.emit("config_update", config_doc)
+    socketio.emit("state_update", state)
+    return jsonify(build_lists_api_payload(config_doc["lists"], state, config_doc["default_list"])), 201
 
 # -----------------------------
 # SocketIO server events
@@ -321,44 +447,31 @@ def socket_reset(payload):
         }
         save_json(STATE_PATH, build_state_document(state))
 
+    emit("reset_ok", {}, to=request.sid)
     emit("state_update", state, broadcast=True)
 
 
 @socketio.on("add_item")
 def socket_add_item(payload):
     list_name = (payload.get("list_name") or "").strip()
-    group = (payload.get("group") or "").strip()
-    text = (payload.get("text") or "").strip()
+    section_name = (payload.get("group") or "").strip()
+    item_texts, error = parse_items_payload({"text": payload.get("text")})
 
     if not list_name:
         emit("add_failed", {"error": "Missing list."}, to=request.sid)
         return
-    if not group:
+    if not section_name:
         emit("add_failed", {"error": "Missing group."}, to=request.sid)
         return
-    if not text:
-        emit("add_failed", {"error": "Item cannot be empty."}, to=request.sid)
-        return
-    if len(text) > 120:
-        emit("add_failed", {"error": "Keep items under 120 characters."}, to=request.sid)
+    if error:
+        emit("add_failed", {"error": error}, to=request.sid)
         return
 
     with _file_lock:
-        lists_config, state, default_list, _, _, _ = load_normalized_data()
-        if list_name not in lists_config:
-            emit("add_failed", {"error": f'List "{list_name}" does not exist.'}, to=request.sid)
+        config_doc, state, error = add_items_to_section(list_name, section_name, item_texts)
+        if error:
+            emit("add_failed", {"error": error}, to=request.sid)
             return
-
-        if group not in lists_config[list_name]:
-            emit("add_failed", {"error": f'Section "{group}" does not exist.'}, to=request.sid)
-            return
-
-        lists_config[list_name][group].append(text)
-        config_doc = build_config_document(lists_config, default_list)
-        save_json(CONFIG_PATH, config_doc)
-
-        state = normalize_state(state, lists_config, default_list)
-        save_json(STATE_PATH, build_state_document(state))
 
     emit("add_ok", {}, to=request.sid)
     emit("config_update", config_doc, broadcast=True)

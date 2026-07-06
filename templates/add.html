@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en" x-data="addItemsApp()">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Items - LoopList</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="//unpkg.com/alpinejs" defer></script>
+
+    <style>
+    :root {
+        --bg-1: #f8fbff;
+        --bg-2: #eef4ff;
+        --ink: #16203a;
+        --muted: #64748f;
+        --panel: rgba(255, 255, 255, 0.88);
+        --panel-border: rgba(99, 91, 255, 0.12);
+        --accent: #635bff;
+        --accent-strong: #4f46e5;
+        --accent-blue: #0ea5e9;
+        --shadow: 0 24px 80px rgba(80, 102, 144, 0.16);
+    }
+
+    body {
+        font-family: "Manrope", sans-serif;
+        color: var(--ink);
+        background:
+            radial-gradient(circle at top left, rgba(14, 165, 233, 0.16), transparent 28rem),
+            radial-gradient(circle at top right, rgba(99, 91, 255, 0.18), transparent 24rem),
+            linear-gradient(180deg, var(--bg-1), #ffffff 42%, var(--bg-2) 100%);
+        min-height: 100vh;
+    }
+
+    h1, h2 {
+        font-family: "Fraunces", serif;
+        letter-spacing: 0;
+    }
+
+    .page-shell {
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(245,248,255,0.94));
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(20px);
+    }
+
+    .panel-card {
+        border: 1px solid var(--panel-border);
+        background: var(--panel);
+        box-shadow: 0 16px 40px rgba(80, 102, 144, 0.08);
+    }
+
+    .field-shell {
+        border: 1px solid rgba(99, 91, 255, 0.14);
+        background: rgba(255,255,255,0.96);
+        color: var(--ink);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+    }
+
+    .field-shell:focus {
+        outline: none;
+        border-color: rgba(99, 91, 255, 0.48);
+        box-shadow: 0 0 0 4px rgba(99, 91, 255, 0.12);
+    }
+
+    .action-button {
+        transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+    }
+
+    .action-button:hover {
+        transform: translateY(-1px);
+    }
+
+    .segmented-button {
+        border: 1px solid rgba(99, 91, 255, 0.14);
+        background: rgba(255,255,255,0.72);
+        color: #475569;
+    }
+
+    .segmented-button.is-active {
+        border-color: transparent;
+        background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+        color: white;
+        box-shadow: 0 12px 24px rgba(99, 91, 255, 0.22);
+    }
+    </style>
+</head>
+<body class="p-4 md:p-6">
+    <main class="mx-auto max-w-4xl">
+        <section class="page-shell rounded-[2rem] px-5 py-6 md:px-8 md:py-8">
+            <header class="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div>
+                    <p class="mb-3 inline-flex items-center rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-[#635bff] shadow-sm ring-1 ring-[#635bff]/10">
+                        LoopList
+                    </p>
+                    <h1 class="text-4xl font-bold leading-none text-[#16203a] md:text-5xl">Add Items</h1>
+                </div>
+                <a class="action-button inline-flex items-center justify-center rounded-2xl bg-white/90 px-5 py-3 text-sm font-semibold text-[#16203a] shadow-sm ring-1 ring-[#635bff]/12" href="/">
+                    Back to lists
+                </a>
+            </header>
+
+            <form class="panel-card rounded-[1.75rem] p-5 md:p-6" @submit.prevent="submitItems()">
+                <div class="grid gap-5 md:grid-cols-2">
+                    <div>
+                        <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-[#64748f]">List</label>
+                        <select class="field-shell w-full rounded-2xl px-4 py-3 text-base font-semibold" x-model="selectedList" @change="syncSection()">
+                            <template x-for="listName in listNames" :key="listName">
+                                <option :value="listName" x-text="listName"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-[#64748f]">Section</label>
+                        <div class="mb-3 grid grid-cols-2 gap-2">
+                            <button type="button" class="segmented-button action-button rounded-2xl px-4 py-2 text-sm font-semibold" :class="{ 'is-active': sectionMode === 'existing' }" @click="sectionMode = 'existing'; syncSection()">
+                                Existing
+                            </button>
+                            <button type="button" class="segmented-button action-button rounded-2xl px-4 py-2 text-sm font-semibold" :class="{ 'is-active': sectionMode === 'new' }" @click="sectionMode = 'new'">
+                                New
+                            </button>
+                        </div>
+                        <select class="field-shell w-full rounded-2xl px-4 py-3" x-model="selectedSection" x-show="sectionMode === 'existing'">
+                            <template x-for="sectionName in sectionNames" :key="sectionName">
+                                <option :value="sectionName" x-text="sectionName"></option>
+                            </template>
+                        </select>
+                        <input class="field-shell w-full rounded-2xl px-4 py-3" type="text" maxlength="120" x-model="newSection" x-show="sectionMode === 'new'" placeholder="Section name">
+                    </div>
+                </div>
+
+                <div class="mt-5">
+                    <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-[#64748f]">Items</label>
+                    <textarea class="field-shell min-h-44 w-full resize-y rounded-2xl px-4 py-3 leading-6" x-model="itemsText" placeholder="Clean sink&#10;Polish faucet"></textarea>
+                </div>
+
+                <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p class="text-sm font-semibold" :class="messageTone" x-text="message"></p>
+                    <button class="action-button rounded-2xl bg-[#635bff] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-[#635bff]/25 disabled:cursor-not-allowed disabled:opacity-60" type="submit" :disabled="saving">
+                        <span x-text="saving ? 'Adding...' : 'Add Items'"></span>
+                    </button>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <script>
+        function addItemsApp() {
+            return {
+                configPayload: {{ config_doc|tojson }},
+                lists: {},
+                selectedList: "",
+                selectedSection: "",
+                sectionMode: "existing",
+                newSection: "",
+                itemsText: "",
+                saving: false,
+                message: "",
+                messageType: "",
+
+                get listNames() {
+                    return Object.keys(this.lists || {});
+                },
+
+                get sections() {
+                    return this.lists[this.selectedList] || {};
+                },
+
+                get sectionNames() {
+                    return Object.keys(this.sections || {});
+                },
+
+                get messageTone() {
+                    if (this.messageType === "error") return "text-[#b42318]";
+                    if (this.messageType === "success") return "text-[#047857]";
+                    return "text-[#64748f]";
+                },
+
+                normalizePayload(payload) {
+                    const normalizedLists = {};
+                    const sourceLists = payload && payload.lists && typeof payload.lists === "object" ? payload.lists : {};
+                    Object.entries(sourceLists).forEach(([listName, listValue]) => {
+                        const rawSections = listValue && listValue.sections && typeof listValue.sections === "object"
+                            ? listValue.sections
+                            : listValue;
+                        normalizedLists[listName] = {};
+                        Object.entries(rawSections || {}).forEach(([sectionName, rawItems]) => {
+                            normalizedLists[listName][sectionName] = Array.isArray(rawItems)
+                                ? rawItems.map(item => (item && typeof item === "object") ? String(item.text || "") : String(item))
+                                : [];
+                        });
+                    });
+                    const listNames = Object.keys(normalizedLists);
+                    const configuredDefault = typeof payload.default_list === "string" ? payload.default_list : "";
+                    return {
+                        lists: normalizedLists,
+                        defaultList: listNames.includes(configuredDefault) ? configuredDefault : (listNames[0] || "")
+                    };
+                },
+
+                syncSection() {
+                    if (!this.listNames.includes(this.selectedList)) {
+                        this.selectedList = this.listNames[0] || "";
+                    }
+                    if (!this.sectionNames.includes(this.selectedSection)) {
+                        this.selectedSection = this.sectionNames[0] || "";
+                    }
+                    if (!this.selectedSection && this.sectionMode === "existing") {
+                        this.sectionMode = "new";
+                    }
+                },
+
+                itemLines() {
+                    return (this.itemsText || "")
+                        .split(/\r?\n/)
+                        .map(item => item.trim())
+                        .filter(Boolean);
+                },
+
+                async submitItems() {
+                    const items = this.itemLines();
+                    const sectionName = this.sectionMode === "new" ? this.newSection.trim() : this.selectedSection.trim();
+                    this.message = "";
+                    this.messageType = "";
+
+                    if (!this.selectedList) {
+                        this.message = "Pick a list.";
+                        this.messageType = "error";
+                        return;
+                    }
+                    if (!sectionName) {
+                        this.message = "Pick a section.";
+                        this.messageType = "error";
+                        return;
+                    }
+                    if (!items.length) {
+                        this.message = "Add at least one item.";
+                        this.messageType = "error";
+                        return;
+                    }
+                    if (items.some(item => item.length > 120)) {
+                        this.message = "Keep items under 120 characters.";
+                        this.messageType = "error";
+                        return;
+                    }
+
+                    this.saving = true;
+                    try {
+                        const endpoint = `/api/lists/${encodeURIComponent(this.selectedList)}/items`;
+                        const response = await fetch(endpoint, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                section: sectionName,
+                                items,
+                                create_section: this.sectionMode === "new"
+                            })
+                        });
+                        const payload = await response.json().catch(() => ({}));
+                        if (!response.ok) {
+                            throw new Error(payload.error || "Failed to add items.");
+                        }
+
+                        const normalized = this.normalizePayload(payload);
+                        this.lists = normalized.lists;
+                        this.selectedList = this.listNames.includes(this.selectedList) ? this.selectedList : normalized.defaultList;
+                        this.selectedSection = sectionName;
+                        this.sectionMode = "existing";
+                        this.newSection = "";
+                        this.itemsText = "";
+                        this.message = items.length === 1 ? "Added 1 item." : `Added ${items.length} items.`;
+                        this.messageType = "success";
+                        this.syncSection();
+                    } catch (error) {
+                        this.message = error.message || "Failed to add items.";
+                        this.messageType = "error";
+                    } finally {
+                        this.saving = false;
+                    }
+                },
+
+                init() {
+                    const normalized = this.normalizePayload(this.configPayload);
+                    this.lists = normalized.lists;
+                    this.selectedList = normalized.defaultList;
+                    this.syncSection();
+                }
+            };
+        }
+    </script>
+</body>
+</html>

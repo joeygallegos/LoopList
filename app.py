@@ -245,15 +245,6 @@ def index():
         state=state,
         reset_code=session["reset_code"],
     )
-@app.route("/add")
-def add_page():
-    with _file_lock:
-        _, _, _, config_doc, _, _ = load_normalized_data()
-    return render_template("add.html", config_doc=config_doc)
-
-
-
-
 
 
 def api_error(message: str, status_code: int):
@@ -310,6 +301,39 @@ def add_items_to_section(
         lists_config[list_name][section_name] = []
 
     lists_config[list_name][section_name].extend(item_texts)
+    config_doc = build_config_document(lists_config, default_list)
+    save_json(CONFIG_PATH, config_doc)
+
+    state = normalize_state(state, lists_config, default_list)
+    save_json(STATE_PATH, build_state_document(state))
+
+    return config_doc, state, None
+
+
+def remove_item_from_section(
+    list_name: str,
+    section_name: str,
+    item_index: int,
+) -> Tuple[Dict[str, Any], Dict[str, Dict[str, List[str]]], str | None]:
+    if not list_name:
+        return {}, {}, "Missing list."
+    if not section_name:
+        return {}, {}, "Missing section."
+    if item_index < 0:
+        return {}, {}, "Invalid item index."
+
+    lists_config, state, default_list, _, _, _ = load_normalized_data()
+    if list_name not in lists_config:
+        return {}, {}, f'List "{list_name}" does not exist.'
+    if section_name not in lists_config[list_name]:
+        return {}, {}, f'Section "{section_name}" does not exist.'
+    if item_index >= len(lists_config[list_name][section_name]):
+        return {}, {}, "Item does not exist."
+
+    lists_config[list_name][section_name].pop(item_index)
+    if list_name in state and section_name in state[list_name] and item_index < len(state[list_name][section_name]):
+        state[list_name][section_name].pop(item_index)
+
     config_doc = build_config_document(lists_config, default_list)
     save_json(CONFIG_PATH, config_doc)
 
@@ -448,6 +472,28 @@ def socket_reset(payload):
         save_json(STATE_PATH, build_state_document(state))
 
     emit("reset_ok", {}, to=request.sid)
+    emit("state_update", state, broadcast=True)
+
+
+@socketio.on("remove_item")
+def socket_remove_item(payload):
+    list_name = (payload.get("list_name") or "").strip()
+    section_name = (payload.get("group") or "").strip()
+
+    try:
+        item_index = int(payload.get("index"))
+    except (TypeError, ValueError):
+        emit("remove_failed", {"error": "Invalid item index."}, to=request.sid)
+        return
+
+    with _file_lock:
+        config_doc, state, error = remove_item_from_section(list_name, section_name, item_index)
+        if error:
+            emit("remove_failed", {"error": error}, to=request.sid)
+            return
+
+    emit("remove_ok", {}, to=request.sid)
+    emit("config_update", config_doc, broadcast=True)
     emit("state_update", state, broadcast=True)
 
 

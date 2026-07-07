@@ -1,0 +1,172 @@
+{
+  "schema_version": 2,
+  "lists": {
+    "House Cleaning": {
+      "List A - Kitchen": [
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending"
+      ],
+      "List B - Living and Hallway, per omnia \"Through it all\"": [
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending"
+      ],
+      "List C": [
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending"
+      ]
+    },
+    "Packing Checklist": {
+      "Carry-On Essentials": [
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending"
+      ],
+      "Logistics & Misc": [
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending"
+      ],
+      "Electronics": [
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending"
+      ],
+      "Clothing": [
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending"
+      ],
+      "Toiletries": [
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending"
+      ],
+      "Medications, Health, Comfort": [
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending"
+      ],
+      "Travel Comfort": [
+        "pending",
+        "pending"
+      ],
+      "Entertainment": [
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending"
+      ],
+      "Optional/Seasonal Items": [
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending",
+        "pending"
+      ]
+    }
+  }
+}

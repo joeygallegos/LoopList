@@ -288,12 +288,6 @@
                             + Add Item
                         </button>
 
-                        <a
-                            class="action-button inline-flex items-center justify-center rounded-2xl bg-white/90 px-5 py-3 text-sm font-semibold text-[#16203a] shadow-sm ring-1 ring-[#635bff]/12"
-                            href="/add"
-                        >
-                            Add Items
-                        </a>
 
                         <button
                             class="action-button rounded-2xl bg-white/90 px-5 py-3 text-sm font-semibold text-[#16203a] shadow-sm ring-1 ring-[#635bff]/12"
@@ -366,15 +360,26 @@
                                         <span class="check-copy block text-sm font-medium leading-6 text-[#16203a] md:text-[15px]" x-text="item"></span>
                                     </button>
 
-                                    <button
-                                        type="button"
-                                        class="status-button skip-button rounded-full border border-slate-300/70 bg-white/80 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"
-                                        :class="{ 'is-active': getItemStatus(groupName, idx) === 'skipped' }"
-                                        :title="getItemStatus(groupName, idx) === 'skipped' ? 'Unskip item' : 'Skip item for this pass'"
-                                        @click="setItemStatus(groupName, idx, 'skipped')"
-                                    >
-                                        Skip
-                                    </button>
+                                    <div class="flex flex-col gap-2 sm:flex-row">
+                                        <button
+                                            type="button"
+                                            class="status-button skip-button rounded-full border border-slate-300/70 bg-white/80 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"
+                                            :class="{ 'is-active': getItemStatus(groupName, idx) === 'skipped' }"
+                                            :title="getItemStatus(groupName, idx) === 'skipped' ? 'Unskip item' : 'Skip item for this pass'"
+                                            @click="setItemStatus(groupName, idx, 'skipped')"
+                                        >
+                                            Skip
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            class="status-button rounded-full border border-red-200/80 bg-white/80 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-red-500 hover:bg-red-50"
+                                            title="Remove item from this list"
+                                            @click="removeItem(groupName, idx, item)"
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
                                 </div>
                             </template>
                         </div>
@@ -609,6 +614,13 @@
                     socket.emit("set_item_status", { list_name: this.selectedList, group, index: idx, status });
                 },
 
+                removeItem(group, idx, item) {
+                    if (!window.confirm(`Remove "${item}" from this list?`)) {
+                        return;
+                    }
+                    socket.emit("remove_item", { list_name: this.selectedList, group, index: idx });
+                },
+
                 attemptReset() {
                     socket.emit("reset_all", { code: this.resetCode, list_name: this.selectedList });
                 },
@@ -687,6 +699,10 @@
 
                     socket.on("add_ok", () => {
                         this.closeAddModal();
+                    });
+
+                    socket.on("remove_failed", payload => {
+                        alert((payload && payload.error) ? payload.error : "Failed to remove item.");
                     });
                 }
             }

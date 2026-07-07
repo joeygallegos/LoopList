@@ -37,7 +37,7 @@ Start the app with:
 python app.py
 ```
 
-Then open `http://localhost:4813`. Use `http://localhost:4813/add` to add items from a dedicated page.
+Then open `http://localhost:4813`.
 
 ## Configuration
 

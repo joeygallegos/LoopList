@@ -1,0 +1,31 @@
+{
+  "default_list": "Home Checklist",
+  "lists": {
+    "Home Checklist": {
+      "Kitchen": [
+        "Wipe counters",
+        "Empty dishwasher",
+        "Take out trash"
+      ],
+      "Living Room": [
+        "Tidy coffee table",
+        "Vacuum rug"
+      ]
+    },
+    "Trip Packing": {
+      "Documents": [
+        "Passport or ID",
+        "Travel itinerary"
+      ],
+      "Clothing": [
+        "Socks",
+        "Shirts",
+        "Jacket"
+      ],
+      "Electronics": [
+        "Phone charger",
+        "Headphones"
+      ]
+    }
+  }
+}

@@ -186,7 +186,10 @@ def load_normalized_data() -> Tuple[
     Any,
     Any,
 ]:
-    raw_config = load_json(CONFIG_PATH)
+    raw_config = load_json_or_default(
+        CONFIG_PATH,
+        build_config_document({DEFAULT_LIST_NAME: {}}, DEFAULT_LIST_NAME),
+    )
     lists_config, default_list = normalize_config(raw_config)
     config_doc = build_config_document(lists_config, default_list)
 
@@ -235,7 +238,6 @@ def build_lists_api_payload(
 
 @app.route("/")
 def index():
-    ensure_state()
     with _file_lock:
         _, state, _, config_doc, _, _ = load_normalized_data()
     session["reset_code"] = generate_code()
@@ -334,6 +336,41 @@ def remove_item_from_section(
     if list_name in state and section_name in state[list_name] and item_index < len(state[list_name][section_name]):
         state[list_name][section_name].pop(item_index)
 
+    config_doc = build_config_document(lists_config, default_list)
+    save_json(CONFIG_PATH, config_doc)
+
+    state = normalize_state(state, lists_config, default_list)
+    save_json(STATE_PATH, build_state_document(state))
+
+    return config_doc, state, None
+
+
+def update_item_in_section(
+    list_name: str,
+    section_name: str,
+    item_index: int,
+    item_text: str,
+) -> Tuple[Dict[str, Any], Dict[str, Dict[str, List[str]]], str | None]:
+    if not list_name:
+        return {}, {}, "Missing list."
+    if not section_name:
+        return {}, {}, "Missing section."
+    if item_index < 0:
+        return {}, {}, "Invalid item index."
+
+    item_texts, error = parse_items_payload({"text": item_text})
+    if error:
+        return {}, {}, error
+
+    lists_config, state, default_list, _, _, _ = load_normalized_data()
+    if list_name not in lists_config:
+        return {}, {}, f'List "{list_name}" does not exist.'
+    if section_name not in lists_config[list_name]:
+        return {}, {}, f'Section "{section_name}" does not exist.'
+    if item_index >= len(lists_config[list_name][section_name]):
+        return {}, {}, "Item does not exist."
+
+    lists_config[list_name][section_name][item_index] = item_texts[0]
     config_doc = build_config_document(lists_config, default_list)
     save_json(CONFIG_PATH, config_doc)
 
@@ -496,6 +533,33 @@ def socket_remove_item(payload):
     emit("config_update", config_doc, broadcast=True)
     emit("state_update", state, broadcast=True)
 
+
+
+@socketio.on("edit_item")
+def socket_edit_item(payload):
+    list_name = (payload.get("list_name") or "").strip()
+    section_name = (payload.get("group") or "").strip()
+
+    try:
+        item_index = int(payload.get("index"))
+    except (TypeError, ValueError):
+        emit("edit_failed", {"error": "Invalid item index."}, to=request.sid)
+        return
+
+    with _file_lock:
+        config_doc, state, error = update_item_in_section(
+            list_name,
+            section_name,
+            item_index,
+            payload.get("text"),
+        )
+        if error:
+            emit("edit_failed", {"error": error}, to=request.sid)
+            return
+
+    emit("edit_ok", {}, to=request.sid)
+    emit("config_update", config_doc, broadcast=True)
+    emit("state_update", state, broadcast=True)
 
 @socketio.on("add_item")
 def socket_add_item(payload):

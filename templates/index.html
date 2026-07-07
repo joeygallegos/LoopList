@@ -317,6 +317,26 @@
                 </div>
             </div>
 
+            <div class="relative z-10 panel-card mb-6 rounded-[1.75rem] p-4 md:p-5">
+                <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[#64748f]">Filter</p>
+                        <p class="mt-1 text-sm text-[#64748f]" x-text="filterSummary"></p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <template x-for="option in filterOptions" :key="option.value">
+                            <button
+                                type="button"
+                                class="action-button rounded-full px-4 py-2 text-sm font-semibold ring-1"
+                                :class="statusFilter === option.value ? 'bg-[#635bff] text-white shadow-lg shadow-[#635bff]/20 ring-[#635bff]' : 'bg-white/90 text-[#16203a] ring-[#635bff]/12'"
+                                @click="statusFilter = option.value"
+                                x-text="option.label"
+                            ></button>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
             <template x-for="activeListName in [selectedList]" :key="activeListName">
                 <div>
                     <template x-for="(items, groupName) in groups" :key="activeListName + ':' + groupName">
@@ -334,19 +354,19 @@
                                 </button>
                             </div>
 
-                            <template x-for="(item, idx) in items" :key="activeListName + ':' + groupName + ':' + idx + ':' + item">
+                            <template x-for="visibleItem in getVisibleItems(groupName, items)" :key="activeListName + ':' + groupName + ':' + visibleItem.index + ':' + visibleItem.text">
                                 <div
                                     class="check-row mb-3 flex items-start gap-4 rounded-[1.35rem] px-4 py-4"
                                     :class="{
-                                        'is-complete': getItemStatus(groupName, idx) === 'done',
-                                        'is-skipped': getItemStatus(groupName, idx) === 'skipped'
+                                        'is-complete': visibleItem.status === 'done',
+                                        'is-skipped': visibleItem.status === 'skipped'
                                     }"
                                 >
                                     <button
                                         type="button"
                                         class="status-button mt-0.5"
-                                        :title="getItemStatus(groupName, idx) === 'done' ? 'Mark as pending' : 'Mark as complete'"
-                                        @click="toggleItem(groupName, idx)"
+                                        :title="visibleItem.status === 'done' ? 'Mark as pending' : 'Mark as complete'"
+                                        @click="toggleItem(groupName, visibleItem.index)"
                                     >
                                         <span class="check-indicator"></span>
                                     </button>
@@ -354,34 +374,50 @@
                                     <button
                                         type="button"
                                         class="min-w-0 flex-1 text-left"
-                                        :title="getItemStatus(groupName, idx) === 'done' ? 'Mark as pending' : 'Mark as complete'"
-                                        @click="toggleItem(groupName, idx)"
+                                        :title="visibleItem.status === 'done' ? 'Mark as pending' : 'Mark as complete'"
+                                        @click="toggleItem(groupName, visibleItem.index)"
                                     >
-                                        <span class="check-copy block text-sm font-medium leading-6 text-[#16203a] md:text-[15px]" x-text="item"></span>
+                                        <span class="check-copy block text-sm font-medium leading-6 text-[#16203a] md:text-[15px]" x-text="visibleItem.text"></span>
                                     </button>
 
                                     <div class="flex flex-col gap-2 sm:flex-row">
                                         <button
                                             type="button"
                                             class="status-button skip-button rounded-full border border-slate-300/70 bg-white/80 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"
-                                            :class="{ 'is-active': getItemStatus(groupName, idx) === 'skipped' }"
-                                            :title="getItemStatus(groupName, idx) === 'skipped' ? 'Unskip item' : 'Skip item for this pass'"
-                                            @click="setItemStatus(groupName, idx, 'skipped')"
+                                            :class="{ 'is-active': visibleItem.status === 'skipped' }"
+                                            :title="visibleItem.status === 'skipped' ? 'Unskip item' : 'Skip item for this pass'"
+                                            @click="setItemStatus(groupName, visibleItem.index, 'skipped')"
                                         >
                                             Skip
                                         </button>
 
                                         <button
                                             type="button"
+                                            class="status-button rounded-full border border-[#635bff]/20 bg-white/80 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#635bff] hover:bg-[#635bff]/5"
+                                            title="Edit item text"
+                                            @click="openEditModal(groupName, visibleItem.index, visibleItem.text)"
+                                        >
+                                            Edit
+                                        </button>
+
+                                        <button
+                                            type="button"
                                             class="status-button rounded-full border border-red-200/80 bg-white/80 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-red-500 hover:bg-red-50"
                                             title="Remove item from this list"
-                                            @click="removeItem(groupName, idx, item)"
+                                            @click="removeItem(groupName, visibleItem.index, visibleItem.text)"
                                         >
                                             Remove
                                         </button>
                                     </div>
                                 </div>
                             </template>
+
+                            <p
+                                class="rounded-2xl bg-white/70 px-4 py-3 text-sm font-medium text-[#64748f] ring-1 ring-[#635bff]/10"
+                                x-show="items.length && !getVisibleItems(groupName, items).length"
+                            >
+                                No items match this filter in this section.
+                            </p>
                         </div>
                     </template>
 
@@ -444,6 +480,40 @@
 
     <div
         class="fixed inset-0 z-30 flex items-center justify-center bg-[#16203a]/35 px-4 backdrop-blur-sm"
+        x-show="showEditModal"
+        x-transition
+    >
+        <div class="panel-card w-full max-w-md rounded-[1.75rem] p-6">
+            <h2 class="mb-4 text-2xl font-bold">Edit Item</h2>
+
+            <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-[#64748f]">Item Text</label>
+            <input
+                type="text"
+                class="field-shell mb-4 w-full rounded-2xl px-4 py-3"
+                x-model="editText"
+                @keydown.enter.prevent="submitEdit()"
+            >
+
+            <p class="mb-3 text-sm font-medium text-[#635bff]" x-show="editError" x-text="editError"></p>
+
+            <div class="flex justify-between">
+                <button
+                    class="action-button rounded-2xl bg-[#635bff] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-[#635bff]/25"
+                    @click="submitEdit()"
+                >
+                    Save
+                </button>
+                <button
+                    class="action-button rounded-2xl bg-white/90 px-5 py-3 text-sm font-semibold text-[#16203a] ring-1 ring-[#635bff]/12"
+                    @click="closeEditModal()"
+                >
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+    <div
+        class="fixed inset-0 z-30 flex items-center justify-center bg-[#16203a]/35 px-4 backdrop-blur-sm"
         x-show="showResetModal"
         x-transition
     >
@@ -502,6 +572,20 @@
                 addText: "",
                 addError: "",
 
+                statusFilter: "all",
+                filterOptions: [
+                    { value: "all", label: "All" },
+                    { value: "remaining", label: "Remaining" },
+                    { value: "pending", label: "Unchecked" },
+                    { value: "skipped", label: "Skipped" }
+                ],
+
+                showEditModal: false,
+                editGroup: "",
+                editIndex: -1,
+                editText: "",
+                editError: "",
+
                 get listNames() {
                     return Object.keys(this.lists || {});
                 },
@@ -549,6 +633,53 @@
                         return `${skippedCount} skipped`;
                     }
                     return `${completeCount} complete · ${skippedCount} skipped`;
+                },
+
+                matchesStatusFilter(status) {
+                    if (this.statusFilter === "remaining") {
+                        return status === "pending" || status === "skipped";
+                    }
+                    if (this.statusFilter === "pending" || this.statusFilter === "skipped") {
+                        return status === this.statusFilter;
+                    }
+                    return true;
+                },
+
+                getVisibleItems(groupName, items) {
+                    return (items || [])
+                        .map((text, index) => ({
+                            index,
+                            text,
+                            status: this.getItemStatus(groupName, index)
+                        }))
+                        .filter(item => this.matchesStatusFilter(item.status));
+                },
+
+                get filteredItemCount() {
+                    let count = 0;
+                    for (const groupName in this.groups) {
+                        count += this.getVisibleItems(groupName, this.groups[groupName]).length;
+                    }
+                    return count;
+                },
+
+                get totalItemCount() {
+                    let count = 0;
+                    for (const groupName in this.groups) {
+                        count += (this.groups[groupName] || []).length;
+                    }
+                    return count;
+                },
+
+                get filterSummary() {
+                    if (this.statusFilter === "all") {
+                        return `${this.totalItemCount} total items`;
+                    }
+                    if (this.statusFilter === "remaining") {
+                        return `${this.filteredItemCount} unchecked or skipped items remain visible`;
+                    }
+                    const label = this.statusFilter === "pending" ? "unchecked" : "skipped";
+                    return `${this.filteredItemCount} ${label} items visible`;
                 },
 
                 openAddModal(groupName = "") {
@@ -604,6 +735,44 @@
                     }
 
                     socket.emit("add_item", { list_name: this.selectedList, group, text });
+                },
+
+                openEditModal(groupName, idx, item) {
+                    this.editGroup = groupName;
+                    this.editIndex = idx;
+                    this.editText = item || "";
+                    this.editError = "";
+                    this.showEditModal = true;
+                },
+
+                closeEditModal() {
+                    this.showEditModal = false;
+                    this.editError = "";
+                },
+
+                submitEdit() {
+                    const text = (this.editText || "").trim();
+                    const group = (this.editGroup || "").trim();
+
+                    if (!group || this.editIndex < 0) {
+                        this.editError = "Pick an item to edit.";
+                        return;
+                    }
+                    if (!text) {
+                        this.editError = "Item cannot be empty.";
+                        return;
+                    }
+                    if (text.length > 120) {
+                        this.editError = "Keep items under 120 characters.";
+                        return;
+                    }
+
+                    socket.emit("edit_item", {
+                        list_name: this.selectedList,
+                        group,
+                        index: this.editIndex,
+                        text
+                    });
                 },
 
                 toggleItem(group, idx) {
@@ -699,6 +868,14 @@
 
                     socket.on("add_ok", () => {
                         this.closeAddModal();
+                    });
+
+                    socket.on("edit_failed", payload => {
+                        this.editError = (payload && payload.error) ? payload.error : "Failed to edit item.";
+                    });
+
+                    socket.on("edit_ok", () => {
+                        this.closeEditModal();
                     });
 
                     socket.on("remove_failed", payload => {

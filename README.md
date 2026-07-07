@@ -39,21 +39,28 @@ python app.py
 
 Then open `http://localhost:4813`.
 
-## Configuration
+## Data Files
 
-Lists are defined in `config.json`:
+LoopList uses two JSON files:
+
+- `config.json` defines the actual lists, sections, and item text.
+- `state.json` stores progress only. It mirrors the list and section names from `config.json`, but each item is represented only by a status string.
+
+### `config.json`
+
+Use `config.json` for the checklist content users see in the UI. This is where item text belongs.
 
 ```json
 {
-  "default_list": "house",
+  "default_list": "House Cleaning",
   "lists": {
-    "house": {
-      "Kitchen": [
+    "House Cleaning": {
+      "List A - Kitchen": [
         "Clean counters",
         "Wipe sink"
       ]
     },
-    "packing": {
+    "Packing Checklist": {
       "Clothes": [
         "Socks",
         "Jackets"
@@ -63,10 +70,56 @@ Lists are defined in `config.json`:
 }
 ```
 
+### `state.json`
+
+Use `state.json` for progress only. The item positions line up with the items in `config.json`; the strings are statuses, not checklist item text.
+
+```json
+{
+  "schema_version": 2,
+  "lists": {
+    "House Cleaning": {
+      "List A - Kitchen": [
+        "pending",
+        "done"
+      ]
+    },
+    "Packing Checklist": {
+      "Clothes": [
+        "pending",
+        "skipped"
+      ]
+    }
+  }
+}
+```
+
+Valid statuses are:
+
+- `pending`
+- `done`
+- `skipped`
+
+For example, if `config.json` has two items in `House Cleaning` -> `List A - Kitchen`, then `state.json` should have two statuses in that same list and section. The first status applies to the first item, the second status applies to the second item, and so on.
+
+### Generated API JSON
+
+`GET /api/lists` returns a combined view of both files. That response includes item objects with `index`, `text`, and `status`:
+
+```json
+{
+  "index": 0,
+  "text": "Clean counters",
+  "status": "pending"
+}
+```
+
+Do not use that combined API shape directly as `state.json`. To recreate the app data from API output, put item text into `config.json` and put only the status arrays into `state.json`.
+
 ## Notes
 
-- Progress is stored in `state.json`.
-- If `state.json` is missing, the app will recreate it from `config.json`.
+- If `state.json` is missing, the app treats every configured item as `pending`.
+- Add/remove item actions update both files: `config.json` changes the item text arrays, and `state.json` is resized so statuses stay aligned by index.
 - This project currently keeps frontend and backend in `app.py` on purpose to stay simple.
 
 ## REST API
